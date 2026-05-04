@@ -36,7 +36,7 @@ WORKOUTS = {
         {"name": "Французский жим", "sets": 3, "rest": 90},
     ],
     "fri": [
-        {"name": "Присед", "sets": 4, "rest": 150},  # среднее 120–180
+        {"name": "Присед", "sets": 4, "rest": 150},
         {"name": "Жим ногами", "sets": 3, "rest": 120},
         {"name": "Сгибание ног в тренажёре", "sets": 3, "rest": 90},
         {"name": "Подъёмы на носки", "sets": 4, "rest": 60},
@@ -72,6 +72,7 @@ def get_keyboard(state):
         if state.get("resting"):
             return InlineKeyboardMarkup(inline_keyboard=[
                 [InlineKeyboardButton(text=f"⏳ {format_time(state['rest_left'])}", callback_data="noop")],
+                [InlineKeyboardButton(text="⏭ Пропустить отдых", callback_data="skip_rest")],
                 [InlineKeyboardButton(text="🔄 Рестарт", callback_data="restart"),
                  InlineKeyboardButton(text="🏁 Завершить", callback_data="finish")]
             ])
@@ -88,7 +89,6 @@ async def render(chat_id):
 
     if state["mode"] == "choose":
         text = "📅 Выбери день тренировки"
-
     else:
         ex = state["ex_list"][state["exercise_index"]]
 
@@ -133,7 +133,6 @@ async def start_day(chat_id, day):
         "timer_task": None,
         "ex_list": WORKOUTS[day]
     }
-
     await render(chat_id)
 
 async def countdown(chat_id):
@@ -171,7 +170,6 @@ async def start_rest(chat_id, seconds):
         state["timer_task"].cancel()
 
     await render(chat_id)
-
     state["timer_task"] = asyncio.create_task(countdown(chat_id))
 
 async def finish_workout(chat_id):
@@ -238,6 +236,26 @@ async def skip_cb(callback: CallbackQuery):
         await finish_workout(chat_id)
         await callback.answer("Тренировка завершена")
         return
+
+    await render(chat_id)
+    await callback.answer()
+
+@dp.callback_query(F.data == "skip_rest")
+async def skip_rest_cb(callback: CallbackQuery):
+    chat_id = callback.message.chat.id
+    state = user_state.get(chat_id)
+
+    if not state or not state.get("resting"):
+        return
+
+    if state.get("timer_task"):
+        state["timer_task"].cancel()
+
+    state["resting"] = False
+    state["rest_left"] = 0
+
+    notify = await bot.send_message(chat_id, "⏩ Отдых пропущен")
+    asyncio.create_task(delete_later(chat_id, notify.message_id, 8))
 
     await render(chat_id)
     await callback.answer()
